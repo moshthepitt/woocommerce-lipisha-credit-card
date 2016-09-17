@@ -1,5 +1,4 @@
 jQuery(function(jQuery) {
-  jQuery('[data-numeric]').payment('restrictNumeric');
   jQuery('.cc-number').payment('formatCardNumber');
   jQuery('.cc-exp').payment('formatCardExpiry');
   jQuery('.cc-cvc').payment('formatCardCVC');
@@ -25,7 +24,6 @@ jQuery(function(jQuery) {
 
 
 jQuery(document).ajaxComplete(function() {
-  jQuery('[data-numeric]').payment('restrictNumeric');
   jQuery('.cc-number').payment('formatCardNumber');
   jQuery('.cc-exp').payment('formatCardExpiry');
   jQuery('.cc-cvc').payment('formatCardCVC');
