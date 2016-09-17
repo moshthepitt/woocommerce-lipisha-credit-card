@@ -1,0 +1,11 @@
+.lipisha.has-error input {
+  border-width: 2px;
+}
+
+.lipisha-validation.text-danger:after {
+  content: 'Validation failed';
+}
+
+.lipisha-validation.text-success:after {
+  content: 'Validation passed';
+}
