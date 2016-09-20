@@ -108,6 +108,39 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 	//Hook our function in
 	add_action('woocommerce_lipisha_ipn_reconciler', 'woocommerce_lipisha_reconcile_ipn');
 	function woocommerce_lipisha_reconcile_ipn() {
+		global $wpdb;
+		$card_transaction_table_name = $wpdb->prefix . "woocommerce_lipisha_authorize_card_transaction";
+		$complete_card_transaction_table_name = $wpdb->prefix . "woocommerce_lipisha_complete_card_transaction"; 
+
+		$authorized_records = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT * FROM `$card_transaction_table_name`
+				 WHERE processed = 0
+				 ORDER BY created_at DESC
+				", ""
+		 )
+		);
+
+		if(!empty($authorized_records)) {
+			foreach ($authorized_records as $authorized_record) {
+				$this_order = wc_get_order($authorized_record->order_id);
+				if ($this_order->get_status() == "pending" || $this_order->get_status() == 'on-hold') {
+					$completed_records = $wpdb->get_results(
+						$wpdb->prepare(
+							"SELECT * FROM `$complete_card_transaction_table_name`
+							 WHERE `transaction_reference` = %s
+							",
+						  $authorized_record->transaction_reference
+					 )
+					);
+					if(empty($completed_records)) {
+						// attempt to complete order using Lipisha
+					} else {
+						// mark this $authorized_record as processed
+					}
+				}
+			}
+		}
 	}
 
 	// Payment Gateway
