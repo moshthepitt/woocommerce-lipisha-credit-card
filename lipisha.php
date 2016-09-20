@@ -327,7 +327,7 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 						<label for="cc-exp-month" class="">Expiry Date <abbr class="required" title="required">*</abbr></label>
 						<select name="cc-exp-month" id="cc-exp-month" class="input-select">
 						  <option value="">Select Month</option>';
-						  
+
 						  foreach(range(1,12) as $month) {
 						  	$output .= "<option value='$month'>$month</option>";
 						  }						  
@@ -339,7 +339,7 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 						<select name="cc-exp-month" id="cc-exp-month" class="input-select">
 						  <option value="">Select Year</option>';
 
-						  foreach(range((int)date("Y"), (int)date("Y") + 12) as $year) {
+						  foreach(range((int)date("Y"), (int)date("Y") + 15) as $year) {
 						  	$output .= "<option value='$year'>$year</option>";
 						  }	
 
@@ -349,7 +349,6 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 						<label for="cc-cvc" class="">Security Code <abbr class="required" title="required">*</abbr></label>
 						<input type="tel" class="input-text cc-cvc" name="cc-cvc" id="cc-cvc" placeholder="•••" autocomplete="off"/>
 					</p>
-					<h2 class="lipisha-validation"></h2>
 				';
 				echo $output;
 			}
