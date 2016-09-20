@@ -117,25 +117,20 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 		$complete_card_transaction_table_name = $wpdb->prefix . "woocommerce_lipisha_complete_card_transaction"; 
 
 		$authorized_records = $wpdb->get_results(
-			$wpdb->prepare(
-				"SELECT * FROM `$card_transaction_table_name`
+			"SELECT * FROM `$card_transaction_table_name`
 				 WHERE processed = 0
 				 ORDER BY created_at DESC
-				", ""
-		 )
+			"
 		);
 
 		if(!empty($authorized_records)) {
 			foreach ($authorized_records as $authorized_record) {
 				$this_order = wc_get_order($authorized_record->order_id);
-				if ($this_order->get_status() == "pending" || $this_order->get_status() == 'on-hold') {
+				if (is_object($this_order) && ($this_order->get_status() == "pending" || $this_order->get_status() == 'on-hold')) {
 					$completed_records = $wpdb->get_results(
-						$wpdb->prepare(
-							"SELECT * FROM `$complete_card_transaction_table_name`
-							 WHERE `transaction_reference` = %s
-							",
-						  $authorized_record->transaction_reference
-					 )
+						"SELECT * FROM `$complete_card_transaction_table_name`
+							 WHERE `transaction_reference` = $authorized_record->transaction_reference
+						"
 					);
 					if(empty($completed_records)) {
 						// attempt to complete order using Lipisha
@@ -214,11 +209,99 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 		}
 	}
 
+	add_action('woocommerce_thankyou', 'woocommerce_lipisha_cc_complete_order');
+
+	function woocommerce_lipisha_cc_complete_order($order_id) {
+		global $wpdb;
+		$card_transaction_table_name = $wpdb->prefix . "woocommerce_lipisha_authorize_card_transaction";
+		$complete_card_transaction_table_name = $wpdb->prefix . "woocommerce_lipisha_complete_card_transaction";
+
+		$this_order = wc_get_order($order_id);
+
+		if (is_object($this_order) && ($this_order->get_status() == "pending" || $this_order->get_status() == 'on-hold')) {
+			$authorized_record = $wpdb->get_row("SELECT * FROM $card_transaction_table_name WHERE order_id = $this_order->id" );
+			if (!is_null($authorized_record)) {
+				$completed_record = $wpdb->get_row("SELECT * FROM $complete_card_transaction_table_name WHERE transaction_reference = $authorized_record->transaction_reference" );	
+				if (is_null($completed_record)) {
+					// attempt to complete order using Lipisha
+					$lipisha_cc_gateway = new WC_Lipisha_CreditCard_Gateway();
+					if ($lipisha_cc_gateway->testmode) {
+						$complete_card_url = WOOCOMMERCE_LIPISHA_CC_COMPLETE_CARD_URL;
+					} else {
+						$complete_card_url = WOOCOMMERCE_LIPISHA_CC_SANDBOX_COMPLETE_CARD_URL;
+					}
+
+					$data = array(
+				    'api_key' => $lipisha_cc_gateway->lipisha_api_key,
+				    'api_signature' => $lipisha_cc_gateway->lipisha_api_secret,
+				    'api_version' => $lipisha_cc_gateway->lipisha_api_version,
+				    'api_type' => "Callback",
+				    'transaction_index' => $authorized_record->transaction_index,
+				    'transaction_reference' => $authorized_record->transaction_reference,
+					);
+
+					// Send this data to Lipisha for processing
+					$response = wp_remote_post($complete_card_url, array(
+						'method'    => 'POST',
+						'body'      => http_build_query($data),
+						'timeout'   => 180,
+						'sslverify' => false,
+					));
+
+					if (is_wp_error($response)) {
+						// do nothing, will be retried
+					}
+
+					if (empty($response['body'])) {
+						// do nothing, will be retried
+					}
+
+					$response_body = wp_remote_retrieve_body($response);
+					$lipisha_response = json_decode($response_body);
+
+					if (is_object($lipisha_response) && is_object($lipisha_response->status) && is_object($lipisha_response->content)) {
+						// Save Lipisha data
+			    	$wpdb->insert($complete_card_transaction_table_name, array(
+			    	   "transaction_index" => $lipisha_response->content->transaction_index,
+			    	   "transaction_reference" => $lipisha_response->content->transaction_reference,
+			    	   "status" => $lipisha_response->status->status_description,
+			    	   "status_code" => $lipisha_response->status->status_code,
+			    	));
+
+						if ($lipisha_response->status->status_code == "0000") {
+							// successful
+							$this_order->add_order_note(__('Lipisha Credit Card payment completed.', 'kej_lipisha_cc'));
+							// Mark order as Paid
+							$this_order->payment_complete();
+						} else {
+							// not successful								
+							// Add notice to the cart
+							$rejection_reason = (isset($lipisha_response->content->reason)) ? $lipisha_response->content->reason : __('There was an error with the information supplied', 'kej_lipisha_cc');								
+							$this_order->add_order_note(__('Lipisha Error: ', 'kej_lipisha_cc') . $rejection_reason);
+						}
+					} else {
+						// do nothing, will be retried
+					}
+				}
+				// mark this $authorized_record as processed
+				$wpdb->update(
+			    $card_transaction_table_name,
+			    array( 
+			      'processed' => 1,
+			    ), 
+			    array(
+			      "id" => $authorized_record->id
+			    ) 
+				);
+			}
+		}		
+	}
+
 	// Payment Gateway
 	add_action('plugins_loaded', 'init_lipisha_cc_gateway');
 
 	function init_lipisha_cc_gateway() {
-		class WC_Lipisha_CreditCard_Gateway extends WC_Payment_Gateway {
+		class WC_Lipisha_CreditCard_Gateway extends WC_Payment_Gateway_CC {
 			function __construct() {
 				$this->id           = 'kej_lipisha_cc';
 				$this->method_title = __('Lipisha Credit Card', 'kej_lipisha_cc');
@@ -226,7 +309,6 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 				$this->icon = null;
 				$this->method_description = __('Allows payments through cedit cards, via Lipisha.com.', 'kej_lipisha_cc');
 				$this->has_fields   = true;
-				$this->supports = array( 'default_credit_card_form' );
 				$this->testmode     = ($this->get_option('testmode') === 'yes') ? true : false;
 				$this->debug	      = $this->get_option('debug');
 
@@ -433,13 +515,20 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 				// verify credit card using Lipisha Authorize Card
 				$card_number = str_replace(array(' ', '-' ), '', $_POST['kej_lipisha_cc-card-number'] );
 				$card_cvc = (isset($_POST['kej_lipisha_cc-card-cvc'])) ? $_POST['kej_lipisha_cc-card-cvc'] : '';
-				$lipisha_expiry = str_replace(array( '/', ' '), '', $_POST['lipisha_cc-card-expiry'] );
+				$lipisha_expiry = str_replace(array( '/', ' '), '', $_POST['kej_lipisha_cc-card-expiry'] );
 
 				if ($this->testmode) {
 					$auth_card_url = WOOCOMMERCE_LIPISHA_CC_AUTH_CARD_URL;
 				} else {
 					$auth_card_url = WOOCOMMERCE_LIPISHA_CC_SANDBOX_AUTH_CARD_URL;
 				}				
+
+				if ((is_null($order->billing_state) || $order->billing_state == "")) {
+					$state_name = "";
+				} else {
+					$state_name = WC()->countries->states[$order->billing_country][$order->billing_state];
+				}
+				
 
 				$data = array(
 			    'api_key' => $this->lipisha_api_key,
@@ -448,13 +537,13 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 			    'api_type' => "Callback",
 			    'account_number' => $this->lipisha_account_number,
 			    'card_number' => $card_number,
-			    'address1' => $order->billing_address_1,
-			    'address2' => $order->billing_address_2,
+			    'address1' => (is_null($order->billing_address_1) || $order->billing_address_1 == "") ? "" : $order->billing_address_1,
+			    'address2' => (is_null($order->billing_address_2) || $order->billing_address_2 == "") ? "" : $order->billing_address_2,
 			    'expiry' => $lipisha_expiry,
 			    'name' => $order->billing_first_name . " " . $order->billing_last_name,
-			    'country' => $order->billing_country,
-			    'state' => $order->billing_state,
-			    'zip' => $order->billing_postcode,
+			    'country' => WC()->countries->countries[ $order->shipping_country ],
+			    'state' => $state_name,
+			    'zip' => (is_null($order->billing_postcode) || $order->billing_postcode == "") ? "00200" : $order->billing_postcode,
 			    'security_code' => $card_cvc,
 			    'amount' => $order->order_total,
 			    'currency' => $order->order_currency,
@@ -480,17 +569,17 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 				$lipisha_response = json_decode($response_body);
 
 				if (is_object($lipisha_response) && is_object($lipisha_response->status) && is_object($lipisha_response->content)) {
+					global $wpdb;
 					if ($lipisha_response->status->status_code == "0000") {
 						// Payment has been successful
-						$order->add_order_note(__( 'Lipisha Credit Card authorised.', 'WooCommerce'));															 
+						$order->add_order_note(__('Lipisha Credit Card authorised.', 'kej_lipisha_cc'));															 
 						// Mark as processing (payment won't be taken until delivery)
 			    	$order->update_status('pending', __('Waiting to verify Lipisha Credit Card payment.', 'kej_lipisha_cc'));
 						// Reduce stock levels
 			    	$order->reduce_order_stock();
 						// Empty the cart (Very important step)
-						$woocommerce->cart->empty_cart();				
+						WC()->cart->empty_cart();			
 						// Save Lipisha data
-						global $wpdb;
 			    	$card_transaction_table_name = $wpdb->prefix . "woocommerce_lipisha_authorize_card_transaction";
 			    	$wpdb->insert($card_transaction_table_name, array(
 			    	  "order_id" => $order->id,
@@ -506,8 +595,7 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 						);
 					} else {
 						// not successful
-						// Save Lipisha data
-						global $wpdb;
+						// Save Lipisha data						
 			    	$card_transaction_table_name = $wpdb->prefix . "woocommerce_lipisha_authorize_card_transaction";
 			    	$wpdb->insert($card_transaction_table_name, array(
 			    	   "order_id" => $order->id,
@@ -534,9 +622,9 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 			}
 
 			// Validate fields
-				public function validate_fields() {
-					return true;
-				}
+			public function validate_fields() {
+				return true;
+			}
 				
 			// Check if we are forcing SSL on checkout pages
 			// Custom function not required by the Gateway
@@ -545,51 +633,51 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 					if( get_option( 'woocommerce_force_ssl_checkout' ) == "no" ) {
 						echo "<div class=\"error\"><p>". sprintf( __( "<strong>%s</strong> is enabled and WooCommerce is not forcing the SSL certificate on your checkout page. Please ensure that you have a valid SSL certificate and that you are <a href=\"%s\">forcing the checkout pages to be secured.</a>" ), $this->method_title, admin_url( 'admin.php?page=wc-settings&tab=checkout' ) ) ."</p></div>";	
 					}
-				}		
+				}
 			}
 
-		}
+		}		
+	}
 
-		function add_lipisha_cc_gateway($methods) {
-			$methods[] = 'WC_Lipisha_CreditCard_Gateway'; 
-			return $methods;
-		}
+	function add_lipisha_cc_gateway($methods) {
+		$methods[] = 'WC_Lipisha_CreditCard_Gateway'; 
+		return $methods;
+	}
 
-		add_filter('woocommerce_payment_gateways', 'add_lipisha_cc_gateway');
+	add_filter('woocommerce_payment_gateways', 'add_lipisha_cc_gateway');
 
-		// Mark virtual orders as completed automatically
-		add_filter('woocommerce_payment_complete_order_status', 'woocommerce_lipisha_cc_virtual_order_completion', 10, 2);
-		 
-		function woocommerce_lipisha_cc_virtual_order_completion($order_status, $order_id) {
-			$lipisha_gateway = new WC_Lipisha_CreditCard_Gateway();
-		  $auto_complete_virtual_orders = $lipisha_gateway->auto_complete_virtual_orders;
-		  if ($auto_complete_virtual_orders) {
-			  $order = new WC_Order($order_id);	 
-			  if ('processing' == $order_status &&
-			    ('on-hold' == $order->status || 'pending' == $order->status || 'failed' == $order->status)) {	 
-			    $virtual_order = null;	 
-			    if ( count( $order->get_items() ) > 0 ) {	 
-			      foreach( $order->get_items() as $item ) {	 
-			        if ( 'line_item' == $item['type'] ) {	 
-			          $_product = $order->get_product_from_item($item);	 
-			          if (!$_product->is_virtual()) {
-			            // once we've found one non-virtual product we know we're done, break out of the loop
-			            $virtual_order = false;
-			            break;
-			          } else {
-			            $virtual_order = true;
-			          }
-			        }
-			      }
-			    }	 
-			    // virtual order, mark as completed
-			    if ($virtual_order) {
-			      return 'completed';
-			    }
-			  }	
-			} 
-		  // non-virtual order, return original status
-		  return $order_status;
-		}
+	// Mark virtual orders as completed automatically
+	add_filter('woocommerce_payment_complete_order_status', 'woocommerce_lipisha_cc_virtual_order_completion', 10, 2);
+	 
+	function woocommerce_lipisha_cc_virtual_order_completion($order_status, $order_id) {
+		$lipisha_gateway = new WC_Lipisha_CreditCard_Gateway();
+	  $auto_complete_virtual_orders = $lipisha_gateway->auto_complete_virtual_orders;
+	  if ($auto_complete_virtual_orders) {
+		  $order = new WC_Order($order_id);	 
+		  if ('processing' == $order_status &&
+		    ('on-hold' == $order->status || 'pending' == $order->status || 'failed' == $order->status)) {	 
+		    $virtual_order = null;	 
+		    if ( count( $order->get_items() ) > 0 ) {	 
+		      foreach( $order->get_items() as $item ) {	 
+		        if ( 'line_item' == $item['type'] ) {	 
+		          $_product = $order->get_product_from_item($item);	 
+		          if (!$_product->is_virtual()) {
+		            // once we've found one non-virtual product we know we're done, break out of the loop
+		            $virtual_order = false;
+		            break;
+		          } else {
+		            $virtual_order = true;
+		          }
+		        }
+		      }
+		    }	 
+		    // virtual order, mark as completed
+		    if ($virtual_order) {
+		      return 'completed';
+		    }
+		  }	
+		} 
+	  // non-virtual order, return original status
+	  return $order_status;
 	}
 }
