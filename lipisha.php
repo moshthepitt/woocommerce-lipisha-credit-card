@@ -314,7 +314,7 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 				  echo wpautop(wptexturize($description));
 				}
 
-				echo '
+				$output = '
 					<p class="lipisha form-row form-row form-row-wide woocommerce-validated" id="cc-name_field" data-o_class="form-row form-row form-row-wide">
 						<label for="cc-name" class="">Name on Card <abbr class="required" title="required">*</abbr> <small class="text-muted">[<span class="cc-brand"></span>]</small></label>
 						<input type="text" class="input-text cc-name" name="cc-name" id="cc-name" placeholder="Name on Card" />
@@ -323,9 +323,27 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 						<label for="cc-number" class="">Credit Card Number <abbr class="required" title="required">*</abbr></label>
 						<input type="tel" class="input-text cc-number" name="cc-number" id="cc-number" placeholder="•••• •••• •••• ••••" autocomplete="cc-number" />
 					</p>
-					<p class="lipisha form-row form-row form-row-wide woocommerce-validated" id="cc-exp_field" data-o_class="form-row form-row form-row-wide">
-						<label for="cc-exp" class="">Expiry Date <abbr class="required" title="required">*</abbr></label>
-						<input type="tel" class="input-text cc-exp" name="cc-exp" id="cc-exp" placeholder="•• / ••" autocomplete="cc-exp" />
+					<p class="lipisha form-row form-row form-row-wide woocommerce-validated" id="cc-exp-month_field" data-o_class="form-row form-row form-row-wide">
+						<label for="cc-exp-month" class="">Expiry Date <abbr class="required" title="required">*</abbr></label>
+						<select name="cc-exp-month" id="cc-exp-month" class="input-select">
+						  <option value="">Select Month</option>';
+						  
+						  foreach(range(1,12) as $month) {
+						  	$output .= "<option value='$month'>$month</option>";
+						  }						  
+						
+					$output .=	'</select>
+					</p>
+					<p class="lipisha form-row form-row form-row-wide woocommerce-validated" id="cc-exp-year_field" data-o_class="form-row form-row form-row-wide">
+						<label for="cc-exp-year" class="">Expiry Date <abbr class="required" title="required">*</abbr></label>
+						<select name="cc-exp-month" id="cc-exp-month" class="input-select">
+						  <option value="">Select Year</option>';
+
+						  foreach(range((int)date("Y"), (int)date("Y") + 12) as $year) {
+						  	$output .= "<option value='$year'>$year</option>";
+						  }	
+
+						$output .= '</select>
 					</p>
 					<p class="lipisha form-row form-row form-row-wide woocommerce-validated" id="cc-cvc_field" data-o_class="form-row form-row form-row-wide">
 						<label for="cc-cvc" class="">Security Code <abbr class="required" title="required">*</abbr></label>
@@ -333,6 +351,7 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 					</p>
 					<h2 class="lipisha-validation"></h2>
 				';
+				echo $output;
 			}
 
 		}
