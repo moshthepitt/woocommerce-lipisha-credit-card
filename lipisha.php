@@ -329,9 +329,6 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 				add_action('woocommerce_update_options_payment_gateways_' . $this->id, array($this, 'process_admin_options'));
 				add_action('woocommerce_thankyou_lipisha_cc', array($this, 'thankyou_page'));
 
-				// Customer Emails
-				add_action('woocommerce_email_before_order_table', array($this, 'email_instructions'), 10, 3);
-
 				// SSL check
 				add_action('admin_notices', array( $this,	'do_ssl_check' ));
 			}
