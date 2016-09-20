@@ -12,4 +12,4 @@ If you want to enable the test mode then you need to get a new API Key, API Sign
 
 
 
-(Reaplace example.com with your own domain name)
+(Replace example.com with your own domain name)
