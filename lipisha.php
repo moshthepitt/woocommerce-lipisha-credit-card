@@ -135,10 +135,10 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 					if(empty($completed_records)) {
 						// attempt to complete order using Lipisha
 						$lipisha_cc_gateway = new WC_Lipisha_CreditCard_Gateway();
-						if ($lipisha_cc_gateway->testmode) {
+						if (!$lipisha_cc_gateway->testmode) {
 							$complete_card_url = WOOCOMMERCE_LIPISHA_CC_COMPLETE_CARD_URL;
 						} else {
-							$complete_card_url = WOOCOMMERCE_LIPISHA_CC_SANDBOX_COMPLETE_CARD_URL;
+							$complete_card_url = WOOCOMMERCE_LIPISHA_CC_TEST_COMPLETE_CARD_URL;
 						}
 
 						$data = array(
@@ -225,10 +225,10 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 				if (is_null($completed_record)) {
 					// attempt to complete order using Lipisha
 					$lipisha_cc_gateway = new WC_Lipisha_CreditCard_Gateway();
-					if ($lipisha_cc_gateway->testmode) {
+					if (!$lipisha_cc_gateway->testmode) {
 						$complete_card_url = WOOCOMMERCE_LIPISHA_CC_COMPLETE_CARD_URL;
 					} else {
-						$complete_card_url = WOOCOMMERCE_LIPISHA_CC_SANDBOX_COMPLETE_CARD_URL;
+						$complete_card_url = WOOCOMMERCE_LIPISHA_CC_TEST_COMPLETE_CARD_URL;
 					}
 
 					$data = array(
@@ -517,10 +517,10 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 				$card_cvc = (isset($_POST['kej_lipisha_cc-card-cvc'])) ? $_POST['kej_lipisha_cc-card-cvc'] : '';
 				$lipisha_expiry = str_replace(array( '/', ' '), '', $_POST['kej_lipisha_cc-card-expiry'] );
 
-				if ($this->testmode) {
+				if (!$this->testmode) {
 					$auth_card_url = WOOCOMMERCE_LIPISHA_CC_AUTH_CARD_URL;
 				} else {
-					$auth_card_url = WOOCOMMERCE_LIPISHA_CC_SANDBOX_AUTH_CARD_URL;
+					$auth_card_url = WOOCOMMERCE_LIPISHA_CC_TEST_AUTH_CARD_URL;
 				}				
 
 				if ((is_null($order->billing_state) || $order->billing_state == "")) {
@@ -557,7 +557,7 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 					'sslverify' => false,
 				));
 
-				if (is_wp_error( $response)) {
+				if (is_wp_error($response)) {
 					throw new Exception(__( 'We are currently experiencing problems trying to connect to this payment gateway. Sorry for the inconvenience.', 'kej_lipisha_cc'));
 				}
 
@@ -568,53 +568,60 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 				$response_body = wp_remote_retrieve_body($response);
 				$lipisha_response = json_decode($response_body);
 
-				if (is_object($lipisha_response) && is_object($lipisha_response->status) && is_object($lipisha_response->content)) {
-					global $wpdb;
-					if ($lipisha_response->status->status_code == "0000") {
-						// Payment has been successful
-						$order->add_order_note(__('Lipisha Credit Card authorised.', 'kej_lipisha_cc'));															 
-						// Mark as processing (payment won't be taken until delivery)
-			    	$order->update_status('pending', __('Waiting to verify Lipisha Credit Card payment.', 'kej_lipisha_cc'));
-						// Reduce stock levels
-			    	$order->reduce_order_stock();
-						// Empty the cart (Very important step)
-						WC()->cart->empty_cart();			
-						// Save Lipisha data
-			    	$card_transaction_table_name = $wpdb->prefix . "woocommerce_lipisha_authorize_card_transaction";
-			    	$wpdb->insert($card_transaction_table_name, array(
-			    	  "order_id" => $order->id,
-			    	  "transaction_index" => $lipisha_response->content->transaction_index,
-			    	  "transaction_reference" => $lipisha_response->content->transaction_reference,
-			    	  "status" => $lipisha_response->status->status_description,
-			    	  "status_code" => $lipisha_response->status->status_code
-			    	));		
-						// Redirect to thank you page
-						return array(
-							'result'   => 'success',
-							'redirect' => $this->get_return_url($order),
-						);
+				if (is_object($lipisha_response) && is_object($lipisha_response->status)) {
+					if (is_object($lipisha_response->content)) {
+						global $wpdb;
+						if ($lipisha_response->status->status_code == "0000") {
+							// Payment has been successful
+							$order->add_order_note(__('Lipisha Credit Card authorised.', 'kej_lipisha_cc'));															 
+							// Mark as processing (payment won't be taken until delivery)
+				    	$order->update_status('pending', __('Waiting to verify Lipisha Credit Card payment.', 'kej_lipisha_cc'));
+							// Reduce stock levels
+				    	$order->reduce_order_stock();
+							// Empty the cart (Very important step)
+							WC()->cart->empty_cart();			
+							// Save Lipisha data
+				    	$card_transaction_table_name = $wpdb->prefix . "woocommerce_lipisha_authorize_card_transaction";
+				    	$wpdb->insert($card_transaction_table_name, array(
+				    	  "order_id" => $order->id,
+				    	  "transaction_index" => $lipisha_response->content->transaction_index,
+				    	  "transaction_reference" => $lipisha_response->content->transaction_reference,
+				    	  "status" => $lipisha_response->status->status_description,
+				    	  "status_code" => $lipisha_response->status->status_code
+				    	));		
+							// Redirect to thank you page
+							return array(
+								'result'   => 'success',
+								'redirect' => $this->get_return_url($order),
+							);
+						} else {
+							// not successful
+							// Save Lipisha data						
+				    	$card_transaction_table_name = $wpdb->prefix . "woocommerce_lipisha_authorize_card_transaction";
+				    	$wpdb->insert($card_transaction_table_name, array(
+				    	   "order_id" => $order->id,
+				    	   "transaction_index" => $lipisha_response->content->transaction_index,
+				    	   "transaction_reference" => $lipisha_response->content->transaction_reference,
+				    	   "status" => $lipisha_response->status->status_description,
+				    	   "status_code" => $lipisha_response->status->status_code,
+				    	   "processed" => 1
+				    	));
+							// Add notice to the cart
+							$rejection_reason = (isset($lipisha_response->content->reason)) ? $lipisha_response->content->reason : __('There was an error with the information supplied', 'kej_lipisha_cc');
+							wc_add_notice($rejection_reason, 'error' );
+							// Add note to the order for your reference
+							$order->add_order_note(__('Lipisha Error: ', 'kej_lipisha_cc') . $rejection_reason);
+						}
 					} else {
-						// not successful
-						// Save Lipisha data						
-			    	$card_transaction_table_name = $wpdb->prefix . "woocommerce_lipisha_authorize_card_transaction";
-			    	$wpdb->insert($card_transaction_table_name, array(
-			    	   "order_id" => $order->id,
-			    	   "transaction_index" => $lipisha_response->content->transaction_index,
-			    	   "transaction_reference" => $lipisha_response->content->transaction_reference,
-			    	   "status" => $lipisha_response->status->status_description,
-			    	   "status_code" => $lipisha_response->status->status_code,
-			    	   "processed" => 1
-			    	));
-						// Add notice to the cart
-						$rejection_reason = (isset($lipisha_response->content->reason)) ? $lipisha_response->content->reason : __('There was an error with the information supplied', 'kej_lipisha_cc');
-						wc_add_notice($rejection_reason, 'error' );
+						wc_add_notice(__("There was an error with with this payment provider", 'kej_lipisha_cc') , 'error' );
 						// Add note to the order for your reference
-						$order->add_order_note(__('Lipisha Error: ', 'kej_lipisha_cc') . $rejection_reason);
+						$order->add_order_note(__('Lipisha Error: ', 'kej_lipisha_cc') . "#" .$lipisha_response->status->status_code  . ": " . $lipisha_response->status->status_description);
 					}
+					
 				} else {
 					// there was an error
 					// Add notice to the cart
-					wc_add_notice(__("There was an unidentified error with Lipisha", 'kej_lipisha_cc'), 'error' );
+					wc_add_notice(__("There was an unidentified error with this payment provider", 'kej_lipisha_cc'), 'error' );
 					// Add note to the order for your reference
 					$order->add_order_note(__('Error: ', 'kej_lipisha_cc') . __("There was an unidentified error with Lipisha", 'kej_lipisha_cc'));
 				}			
