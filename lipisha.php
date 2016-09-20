@@ -37,6 +37,8 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 	define('WOOCOMMERCE_LIPISHA_PLUGIN_URL', plugin_dir_url(__FILE__));
 	define('WOOCOMMERCE_LIPISHA_PLUGIN_DIR', WP_PLUGIN_DIR.'/'.dirname(plugin_basename(__FILE__)));	
 
+	define('WOOCOMMERCE_LIPISHA_SANDBOX_AUTH_CARD_URL', "http://developer.lipisha.com/index.php/v2/api/authorize_card_transaction");
+
 	function woocommerce_lipisha_install() {
 	  global $wpdb;
 
@@ -54,6 +56,7 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 	    `transaction_reference` varchar(255) NOT NULL,
 	    `status` varchar(50) NOT NULL,
 	    `status_code` varchar(50) NOT NULL,
+	    `processed` int(1) NOT NULL DEFAULT 0,
 	    PRIMARY KEY (`id`),
 	    UNIQUE KEY `order_id` (`order_id`)
 	  ) $charset_collate;";
@@ -82,21 +85,30 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 	  $wpdb->query("DROP TABLE IF EXISTS $complete_card_transaction_table_name");
 	} 
 
-	function set_up_styles() {
-		wp_register_style('woocommerce_lipisha_basic_css', WOOCOMMERCE_LIPISHA_PLUGIN_URL . '/css/lipisha.css');
-		wp_enqueue_style('woocommerce_lipisha_basic_css');
+	function lipisha_cron_schedules($schedules){
+    if(!isset($schedules["5min"])){
+      $schedules["5min"] = array(
+        'interval' => 10 * 60,
+        'display' => __('Once every 5 minutes')
+      );
+    }
+    return $schedules;
+	}
+	add_filter('cron_schedules','lipisha_cron_schedules');
+
+	function woocommerce_lipisha_ipn_task() {
+		$timestamp = wp_next_scheduled('woocommerce_lipisha_ipn_reconciler');
+		//If $timestamp == false it hasn't been done previously
+	  if ($timestamp == false) {
+	    //Schedule the event for right now, then to repeat every 5min
+	    wp_schedule_event(time(), '5min', 'woocommerce_lipisha_ipn_reconciler');
+	  }
 	}
 
-	function set_up_js() {
-		wp_register_script('woocommerce_lipisha_jquery_payment', WOOCOMMERCE_LIPISHA_PLUGIN_URL . '/js/jquery.payment.js', array('jquery'), WOOCOMMERCE_LIPISHA_PLUGIN_VERSION);
-		wp_register_script('woocommerce_lipisha_basic_js', WOOCOMMERCE_LIPISHA_PLUGIN_URL . '/js/lipisha.js', array('jquery'), WOOCOMMERCE_LIPISHA_PLUGIN_VERSION);		
-		wp_enqueue_script('woocommerce_lipisha_jquery_payment');
-		wp_enqueue_script('woocommerce_lipisha_basic_js');
+	//Hook our function in
+	add_action('woocommerce_lipisha_ipn_reconciler', 'woocommerce_lipisha_reconcile_ipn');
+	function woocommerce_lipisha_reconcile_ipn() {
 	}
-
-	//Scripts and Styles
-	add_action('wp_enqueue_scripts', 'set_up_styles');
-	// add_action('wp_enqueue_scripts', 'set_up_js');
 
 	// Payment Gateway
 	add_action('plugins_loaded', 'init_lipisha_gateway');
@@ -104,10 +116,13 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 	function init_lipisha_gateway() {
 		class WC_Lipisha_Gateway extends WC_Payment_Gateway {
 			function __construct() {
-				$this->id           = 'lipisha';
+				$this->id           = 'kej_lipisha';
 				$this->method_title = __('Lipisha', 'woocommerce');
+				$this->title = $this->get_option('title');
+				$this->icon = null;
 				$this->method_description = __('Allows payments through Lipisha.', 'woocommerce');
 				$this->has_fields   = true;
+				$this->supports = array( 'default_credit_card_form' );
 				$this->testmode     = ($this->get_option('testmode') === 'yes') ? true : false;
 				$this->debug	      = $this->get_option('debug');
 
@@ -131,6 +146,9 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 
 				// Customer Emails
 				add_action('woocommerce_email_before_order_table', array($this, 'email_instructions'), 10, 3);
+
+				// SSL check
+				add_action('admin_notices', array( $this,	'do_ssl_check' ));
 			}
 
 			/**
@@ -158,7 +176,7 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 							'title'       => __('Title', 'woocommerce'),
 							'type'        => 'text',
 							'description' => __('This controls the title which the user sees during checkout.', 'woocommerce'),
-							'default'     => __('Credit Card', 'woocommerce'),
+							'default'     => __('Lipisha', 'woocommerce'),
 							'desc_tip'    => true,
 							),
 						'description' => array(
@@ -309,93 +327,134 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 				return parent::is_available();
 			}
 
-			public function payment_fields() {
-				if ($description = $this->get_description()) {
-				  echo wpautop(wptexturize($description));
+			/**
+			 * Process the payment and return the result
+			 *
+			 * @param int $order_id
+			 * @return array
+			 */
+			public function process_payment($order_id) {
+				$order = wc_get_order($order_id);
+
+				// verify credit card using Lipisha Authorize Card
+				$card_number = str_replace(array(' ', '-' ), '', $_POST['kej_lipisha-card-number'] );
+				$card_cvc = (isset($_POST['kej_lipisha-card-cvc'])) ? $_POST['kej_lipisha-card-cvc'] : '';
+				$lipisha_expiry = str_replace(array( '/', ' '), '', $_POST['lipisha-card-expiry'] );
+
+				$auth_card_url = WOOCOMMERCE_LIPISHA_SANDBOX_AUTH_CARD_URL;
+
+				$data = array(
+			    'api_key' => $this->lipisha_api_key,
+			    'api_signature' => $this->lipisha_api_secret,
+			    'api_version' => $this->lipisha_api_version,
+			    'api_type' => "Callback",
+			    'account_number' => $this->lipisha_account_number,
+			    'card_number' => $card_number,
+			    'address1' => $order->billing_address_1,
+			    'address2' => $order->billing_address_2,
+			    'expiry' => $lipisha_expiry,
+			    'name' => $order->billing_first_name . " " . $order->billing_last_name,
+			    'country' => $order->billing_country,
+			    'state' => $order->billing_state,
+			    'zip' => $order->billing_postcode,
+			    'security_code' => $card_cvc,
+			    'amount' => $order->order_total,
+			    'currency' => $order->order_currency,
+				);
+
+				// Send this data to Lipisha for processing
+				$response = wp_remote_post($auth_card_url, array(
+					'method'    => 'POST',
+					'body'      => http_build_query($data),
+					'timeout'   => 90,
+					'sslverify' => false,
+				));
+
+				if (is_wp_error( $response)) {
+					throw new Exception(__( 'We are currently experiencing problems trying to connect to this payment gateway. Sorry for the inconvenience.', 'woocommerce' ));
 				}
 
-				$output = '
-					<p class="lipisha form-row form-row form-row-wide woocommerce-validated" id="cc-name_field" data-o_class="form-row form-row form-row-wide">
-						<label for="cc-name" class="">Name on Card <abbr class="required" title="required">*</abbr> <small class="text-muted">[<span class="cc-brand"></span>]</small></label>
-						<input type="text" class="input-text cc-name" name="cc-name" id="cc-name" placeholder="Name on Card" />
-					</p>
-					<p class="lipisha form-row form-row form-row-wide woocommerce-validated" id="cc-number_field" data-o_class="form-row form-row form-row-wide">
-						<label for="cc-number" class="">Credit Card Number <abbr class="required" title="required">*</abbr></label>
-						<input type="tel" class="input-text cc-number" name="cc-number" id="cc-number" placeholder="•••• •••• •••• ••••" autocomplete="cc-number" />
-					</p>
-					<p class="lipisha form-row form-row form-row-wide woocommerce-validated" id="cc-exp-month_field" data-o_class="form-row form-row form-row-wide">
-						<label for="cc-exp-month" class="">Expiry Date <abbr class="required" title="required">*</abbr></label>
-						<select name="cc-exp-month" id="cc-exp-month" class="input-select">
-						  <option value="">Select Month</option>';
+				if (empty($response['body'])) {
+					throw new Exception(__( 'Lipisha\'s Response was empty.', 'woocommerce' ));
+				}
 
-						  foreach(range(1,12) as $month) {
-						  	$output .= "<option value='$month'>$month</option>";
-						  }						  
-						
-					$output .=	'</select>
-					</p>
-					<p class="lipisha form-row form-row form-row-wide woocommerce-validated" id="cc-exp-year_field" data-o_class="form-row form-row form-row-wide">
-						<label for="cc-exp-year" class="">Expiry Date <abbr class="required" title="required">*</abbr></label>
-						<select name="cc-exp-month" id="cc-exp-month" class="input-select">
-						  <option value="">Select Year</option>';
+				$response_body = wp_remote_retrieve_body($response);
+				$lipisha_response = json_decode($response_body);
 
-						  foreach(range((int)date("Y"), (int)date("Y") + 15) as $year) {
-						  	$output .= "<option value='$year'>$year</option>";
-						  }	
+				if (is_object($lipisha_response) && is_object($lipisha_response->status) && is_object($lipisha_response->content)) {
+					if ($lipisha_response->status->status_code == "0000") {
+						// Payment has been successful
+						$order->add_order_note( __( 'Lipisha credit card authorised.', 'WooCommerce' ) );
+															 
+						// Mark as processing (payment won't be taken until delivery)
+			    	$order->update_status('pending', __('Waiting to verify Lipisha credit card payment.', 'woocommerce'));
 
-						$output .= '</select>
-					</p>
-					<p class="lipisha form-row form-row form-row-wide woocommerce-validated" id="cc-cvc_field" data-o_class="form-row form-row form-row-wide">
-						<label for="cc-cvc" class="">Security Code <abbr class="required" title="required">*</abbr></label>
-						<input type="tel" class="input-text cc-cvc" name="cc-cvc" id="cc-cvc" placeholder="•••" autocomplete="off"/>
-					</p>
-				';
-				echo $output;
+						// Reduce stock levels
+			    	$order->reduce_order_stock();
+
+						// Empty the cart (Very important step)
+						$woocommerce->cart->empty_cart();				
+
+						// Save Lipisha data
+						global $wpdb;
+			    	$card_transaction_table_name = $wpdb->prefix . "woocommerce_lipisha_authorize_card_transaction";
+
+			    	$wpdb->insert($card_transaction_table_name, array(
+			    	   "order_id" => $order->id,
+			    	   "transaction_index" => $lipisha_response->content->transaction_index,
+			    	   "transaction_reference" => $lipisha_response->content->transaction_reference,
+			    	   "status" => $lipisha_response->status->status_description,
+			    	   "status_code" => $lipisha_response->status->status_code
+			    	));		
+
+						// Redirect to thank you page
+						return array(
+							'result'   => 'success',
+							'redirect' => $this->get_return_url( $customer_order ),
+						);
+
+					} else {
+						// not successful
+						// Save Lipisha data
+						global $wpdb;
+			    	$card_transaction_table_name = $wpdb->prefix . "woocommerce_lipisha_authorize_card_transaction";
+
+			    	$wpdb->insert($card_transaction_table_name, array(
+			    	   "order_id" => $order->id,
+			    	   "transaction_index" => $lipisha_response->content->transaction_index,
+			    	   "transaction_reference" => $lipisha_response->content->transaction_reference,
+			    	   "status" => $lipisha_response->status->status_description,
+			    	   "status_code" => $lipisha_response->status->status_code,
+			    	   "processed" => 1
+			    	));
+						// Add notice to the cart
+						wc_add_notice($lipisha_response->content->reason, 'error' );
+						// Add note to the order for your reference
+						$customer_order->add_order_note('Lipisha Error: '. $lipisha_response->content->reason);
+					}
+				} else {
+					// there was an error
+					// Add notice to the cart
+					wc_add_notice(__("There was an unidentified error with Lipisha"), 'error' );
+					// Add note to the order for your reference
+					$customer_order->add_order_note('Error: '. __("There was an unidentified error with Lipisha") );
+				}			
+
 			}
 
-			public function validate_fields() { 
-
-				if ($_POST['cc-name']) {
-					$success = true;
-				} else {					
-					$error_message = __("The Name on Card field is required", 'woothemes');
-					wc_add_notice(__('Field error: ', 'woothemes') . $error_message, 'error');
-					$success = False;
+			// Validate fields
+				public function validate_fields() {
+					return true;
 				}
-
-				if ($_POST['cc-number']) {
-					$success = true;
-				} else {					
-					$error_message = __("The Card Number field is required", 'woothemes');
-					wc_add_notice(__('Field error: ', 'woothemes') . $error_message, 'error');
-					$success = False;
-				}
-
-				if ($_POST['cc-exp-month']) {
-					$success = true;
-				} else {					
-					$error_message = __("The Expiry Month field is required", 'woothemes');
-					wc_add_notice(__('Field error: ', 'woothemes') . $error_message, 'error');
-					$success = False;
-				}
-
-				if ($_POST['cc-exp-year']) {
-					$success = true;
-				} else {					
-					$error_message = __("The Expiry Year field is required", 'woothemes');
-					wc_add_notice(__('Field error: ', 'woothemes') . $error_message, 'error');
-					$success = False;
-				}
-
-				if ($_POST['cc-cvc']) {
-					$success = true;
-				} else {					
-					$error_message = __("The Security Code field is required", 'woothemes');
-					wc_add_notice(__('Field error: ', 'woothemes') . $error_message, 'error');
-					$success = False;
-				}
-
-				return $success;
+				
+			// Check if we are forcing SSL on checkout pages
+			// Custom function not required by the Gateway
+			public function do_ssl_check() {
+				if( $this->enabled == "yes" ) {
+					if( get_option( 'woocommerce_force_ssl_checkout' ) == "no" ) {
+						echo "<div class=\"error\"><p>". sprintf( __( "<strong>%s</strong> is enabled and WooCommerce is not forcing the SSL certificate on your checkout page. Please ensure that you have a valid SSL certificate and that you are <a href=\"%s\">forcing the checkout pages to be secured.</a>" ), $this->method_title, admin_url( 'admin.php?page=wc-settings&tab=checkout' ) ) ."</p></div>";	
+					}
+				}		
 			}
 
 		}
