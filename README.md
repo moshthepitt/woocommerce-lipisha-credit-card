@@ -1,2 +1,2 @@
-# woocommerce-lipisha
-Allows use of Kenyan payment processor Lipisha - https://lipisha.com
+#  Woocommerce Lipisha Credit Card
+Allows use of payments with credit cards via Kenyan payment processor Lipisha - https://lipisha.com

@@ -4,9 +4,9 @@ if (!defined('ABSPATH')) {
 }
 
 /*
-Plugin Name: Woocommerce Lipisha
-Plugin URI: https://github.com/moshthepitt/woocommerce-lipisha
-Description: Allows use of Kenyan payment processor Lipisha - https://lipisha.com
+Plugin Name: Woocommerce Lipisha Credit Card
+Plugin URI: https://github.com/moshthepitt/woocommerce-lipisha-credit-card
+Description: Allows use of payments with credit cards via Kenyan payment processor Lipisha - https://lipisha.com
 Version: 0.1
 Author: Kelvin Jayanoris
 Author URI: http://jayanoris.com
@@ -30,16 +30,16 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USAv
 */
 if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_option('active_plugins')))) {
 	// Hooks for adding/ removing the database table, and the wpcron to check them
-	register_activation_hook(__FILE__, 'woocommerce_lipisha_install');
-	register_uninstall_hook(__FILE__, 'lipisha_on_uninstall');
+	register_activation_hook(__FILE__, 'woocommerce_lipisha_cc_install');
+	register_uninstall_hook(__FILE__, 'lipisha_cc_on_uninstall');
 
-	define('WOOCOMMERCE_LIPISHA_PLUGIN_VERSION', "0.1");
-	define('WOOCOMMERCE_LIPISHA_PLUGIN_URL', plugin_dir_url(__FILE__));
-	define('WOOCOMMERCE_LIPISHA_PLUGIN_DIR', WP_PLUGIN_DIR.'/'.dirname(plugin_basename(__FILE__)));	
+	define('WOOCOMMERCE_LIPISHA_CC_PLUGIN_VERSION', "0.1");
+	define('WOOCOMMERCE_LIPISHA_CC_PLUGIN_URL', plugin_dir_url(__FILE__));
+	define('WOOCOMMERCE_LIPISHA_CC_PLUGIN_DIR', WP_PLUGIN_DIR.'/'.dirname(plugin_basename(__FILE__)));	
 
-	define('WOOCOMMERCE_LIPISHA_SANDBOX_AUTH_CARD_URL', "http://developer.lipisha.com/index.php/v2/api/authorize_card_transaction");
+	define('WOOCOMMERCE_LIPISHA_CC_SANDBOX_AUTH_CARD_URL', "http://developer.lipisha.com/index.php/v2/api/authorize_card_transaction");
 
-	function woocommerce_lipisha_install() {
+	function woocommerce_lipisha_cc_install() {
 	  global $wpdb;
 
 	  $card_transaction_table_name = $wpdb->prefix . "woocommerce_lipisha_authorize_card_transaction";
@@ -76,7 +76,7 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 	  dbDelta($sql);
 	}
 
-	function lipisha_on_uninstall()	{
+	function lipisha_cc_on_uninstall()	{
 	  // Clean up i.e. delete the table, wp_cron already removed on deacivate
 	  global $wpdb;
 	  $card_transaction_table_name = $wpdb->prefix . "woocommerce_lipisha_authorize_card_transaction";
@@ -85,7 +85,7 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 	  $wpdb->query("DROP TABLE IF EXISTS $complete_card_transaction_table_name");
 	} 
 
-	function lipisha_cron_schedules($schedules){
+	function lipisha_cc_cron_schedules($schedules){
     if(!isset($schedules["5min"])){
       $schedules["5min"] = array(
         'interval' => 10 * 60,
@@ -94,20 +94,20 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
     }
     return $schedules;
 	}
-	add_filter('cron_schedules','lipisha_cron_schedules');
+	add_filter('cron_schedules','lipisha_cc_cron_schedules');
 
-	function woocommerce_lipisha_ipn_task() {
-		$timestamp = wp_next_scheduled('woocommerce_lipisha_ipn_reconciler');
+	function woocommerce_lipisha_cc_ipn_task() {
+		$timestamp = wp_next_scheduled('woocommerce_lipisha_cc_ipn_reconciler');
 		//If $timestamp == false it hasn't been done previously
 	  if ($timestamp == false) {
 	    //Schedule the event for right now, then to repeat every 5min
-	    wp_schedule_event(time(), '5min', 'woocommerce_lipisha_ipn_reconciler');
+	    wp_schedule_event(time(), '5min', 'woocommerce_lipisha_cc_ipn_reconciler');
 	  }
 	}
 
 	//Hook our function in
-	add_action('woocommerce_lipisha_ipn_reconciler', 'woocommerce_lipisha_reconcile_ipn');
-	function woocommerce_lipisha_reconcile_ipn() {
+	add_action('woocommerce_lipisha_cc_ipn_reconciler', 'woocommerce_lipisha_cc_reconcile_ipn');
+	function woocommerce_lipisha_cc_reconcile_ipn() {
 		global $wpdb;
 		$card_transaction_table_name = $wpdb->prefix . "woocommerce_lipisha_authorize_card_transaction";
 		$complete_card_transaction_table_name = $wpdb->prefix . "woocommerce_lipisha_complete_card_transaction"; 
@@ -144,16 +144,16 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 	}
 
 	// Payment Gateway
-	add_action('plugins_loaded', 'init_lipisha_gateway');
+	add_action('plugins_loaded', 'init_lipisha_cc_gateway');
 
-	function init_lipisha_gateway() {
-		class WC_Lipisha_Gateway extends WC_Payment_Gateway {
+	function init_lipisha_cc_gateway() {
+		class WC_Lipisha_CreditCard_Gateway extends WC_Payment_Gateway {
 			function __construct() {
-				$this->id           = 'kej_lipisha';
-				$this->method_title = __('Lipisha', 'woocommerce');
+				$this->id           = 'kej_lipisha_cc';
+				$this->method_title = __('Lipisha Credit Card', 'kej_lipisha_cc');
 				$this->title = $this->get_option('title');
 				$this->icon = null;
-				$this->method_description = __('Allows payments through Lipisha.', 'woocommerce');
+				$this->method_description = __('Allows payments through cedit cards, via Lipisha.com.', 'kej_lipisha_cc');
 				$this->has_fields   = true;
 				$this->supports = array( 'default_credit_card_form' );
 				$this->testmode     = ($this->get_option('testmode') === 'yes') ? true : false;
@@ -175,7 +175,7 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 				$this->lipisha_api_version   				= $this->get_option('lipisha_api_version', "1.3.0");				
 
 				add_action('woocommerce_update_options_payment_gateways_' . $this->id, array($this, 'process_admin_options'));
-				add_action('woocommerce_thankyou_lipisha', array($this, 'thankyou_page'));
+				add_action('woocommerce_thankyou_lipisha_cc', array($this, 'thankyou_page'));
 
 				// Customer Emails
 				add_action('woocommerce_email_before_order_table', array($this, 'email_instructions'), 10, 3);
@@ -196,83 +196,67 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 						$shipping_methods[ $method->id ] = $method->get_title();
 					}
 
-					$lipisha_instructions = 'Please fill in the form.';
-
 					$this->form_fields = array(
 						'enabled' => array(
-							'title'   => __('Enable/Disable', 'woocommerce'),
+							'title'   => __('Enable/Disable', 'kej_lipisha_cc'),
 							'type'    => 'checkbox',
-							'label'   => __('Enable Lipisha', 'woocommerce'),
+							'label'   => __('Enable Lipisha Credit Card', 'kej_lipisha_cc'),
 							'default' => 'no'
 							),
 						'title' => array(
-							'title'       => __('Title', 'woocommerce'),
+							'title'       => __('Title', 'kej_lipisha_cc'),
 							'type'        => 'text',
-							'description' => __('This controls the title which the user sees during checkout.', 'woocommerce'),
-							'default'     => __('Lipisha', 'woocommerce'),
-							'desc_tip'    => true,
-							),
-						'description' => array(
-							'title'       => __('Description', 'woocommerce'),
-							'type'        => 'textarea',
-							'description' => __('Payment method description that the customer will see on your checkout.', 'woocommerce'),
-							'default'     => $lipisha_instructions,
-							'desc_tip'    => true,
-							),
-						'instructions' => array(
-							'title'       => __('Instructions', 'woocommerce'),
-							'type'        => 'textarea',
-							'description' => __('Instructions that will be added to the thank you page and emails.', 'woocommerce'),
-							'default'     => $lipisha_instructions,
+							'description' => __('This controls the title which the user sees during checkout.', 'kej_lipisha_cc'),
+							'default'     => __('Lipisha Credit Card', 'kej_lipisha_cc'),
 							'desc_tip'    => true,
 							),
 						'enable_for_methods' => array(
-							'title'             => __('Enable for shipping methods', 'woocommerce'),
+							'title'             => __('Enable for shipping methods', 'kej_lipisha_cc'),
 							'type'              => 'multiselect',
 							'class'             => 'wc-enhanced-select',
 							'css'               => 'width: 450px;',
 							'default'           => '',
-							'description'       => __('If Lipisha is only available for certain methods, set it up here. Leave blank to enable for all methods.', 'woocommerce'),
+							'description'       => __('If Lipisha Credit Card is only available for certain methods, set it up here. Leave blank to enable for all methods.', 'kej_lipisha_cc'),
 							'options'           => $shipping_methods,
 							'desc_tip'          => true,
 							'custom_attributes' => array(
-								'data-placeholder' => __('Select shipping methods', 'woocommerce')
+								'data-placeholder' => __('Select shipping methods', 'kej_lipisha_cc')
 								)
 							),
 						'enable_for_virtual' => array(
-							'title'             => __('Accept for virtual orders', 'woocommerce'),
-							'label'             => __('Accept Lipisha if the order is virtual', 'woocommerce'),
+							'title'             => __('Accept for virtual orders', 'kej_lipisha_cc'),
+							'label'             => __('Accept Lipisha Credit Card if the order is virtual', 'kej_lipisha_cc'),
 							'type'              => 'checkbox',
 							'default'           => 'yes'
 							),
 						'auto_complete_virtual_orders' => array(
-							'title'             => __('Auto-complete for virtual orders', 'woocommerce'),
-							'label'             => __('Automatically mark virtual orders as completed once payment is received', 'woocommerce'),
+							'title'             => __('Auto-complete for virtual orders', 'kej_lipisha_cc'),
+							'label'             => __('Automatically mark virtual orders as completed once payment is received', 'kej_lipisha_cc'),
 							'type'              => 'checkbox',
 							'default'           => 'no'
 							),						
 						'lipisha_api_key' => array(
-							'title'       => __('Lipisha API Key', 'woocommerce'),
+							'title'       => __('Lipisha API Key', 'kej_lipisha_cc'),
 							'type'        => 'text',
-							'description' => __('The API Key received from Lipisha.com.', 'woocommerce'),
+							'description' => __('The API Key received from Lipisha.com.', 'kej_lipisha_cc'),
 							'desc_tip'    => true,
 							),
 						'lipisha_api_secret' => array(
-							'title'       => __('Lipisha API Secret', 'woocommerce'),
+							'title'       => __('Lipisha API Secret', 'kej_lipisha_cc'),
 							'type'        => 'text',
-							'description' => __('The API Secret received from Lipisha.com.', 'woocommerce'),
+							'description' => __('The API Secret received from Lipisha.com.', 'kej_lipisha_cc'),
 							'desc_tip'    => true,
 							),
 						'lipisha_api_version' => array(
-							'title'       => __('Lipisha API Version', 'woocommerce'),
+							'title'       => __('Lipisha API Version', 'kej_lipisha_cc'),
 							'type'        => 'text',
-							'description' => __('The Lipisha API version number.', 'woocommerce'),
+							'description' => __('The Lipisha API version number.', 'kej_lipisha_cc'),
 							'desc_tip'    => true,
 							),
 						'lipisha_account_number' => array(
-							'title'       => __('Lipisha Account Number', 'woocommerce'),
+							'title'       => __('Lipisha Account Number', 'kej_lipisha_cc'),
 							'type'        => 'text',
-							'description' => __('The Account Number received from Lipisha.com.', 'woocommerce'),
+							'description' => __('The Account Number received from Lipisha.com.', 'kej_lipisha_cc'),
 							'desc_tip'    => true,
 							),
 					);
@@ -370,11 +354,11 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 				$order = wc_get_order($order_id);
 
 				// verify credit card using Lipisha Authorize Card
-				$card_number = str_replace(array(' ', '-' ), '', $_POST['kej_lipisha-card-number'] );
-				$card_cvc = (isset($_POST['kej_lipisha-card-cvc'])) ? $_POST['kej_lipisha-card-cvc'] : '';
-				$lipisha_expiry = str_replace(array( '/', ' '), '', $_POST['lipisha-card-expiry'] );
+				$card_number = str_replace(array(' ', '-' ), '', $_POST['kej_lipisha_cc-card-number'] );
+				$card_cvc = (isset($_POST['kej_lipisha_cc-card-cvc'])) ? $_POST['kej_lipisha_cc-card-cvc'] : '';
+				$lipisha_cc_expiry = str_replace(array( '/', ' '), '', $_POST['lipisha_cc-card-expiry'] );
 
-				$auth_card_url = WOOCOMMERCE_LIPISHA_SANDBOX_AUTH_CARD_URL;
+				$auth_card_url = WOOCOMMERCE_LIPISHA_CC_SANDBOX_AUTH_CARD_URL;
 
 				$data = array(
 			    'api_key' => $this->lipisha_api_key,
@@ -385,7 +369,7 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 			    'card_number' => $card_number,
 			    'address1' => $order->billing_address_1,
 			    'address2' => $order->billing_address_2,
-			    'expiry' => $lipisha_expiry,
+			    'expiry' => $lipisha_cc_expiry,
 			    'name' => $order->billing_first_name . " " . $order->billing_last_name,
 			    'country' => $order->billing_country,
 			    'state' => $order->billing_state,
@@ -404,11 +388,11 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 				));
 
 				if (is_wp_error( $response)) {
-					throw new Exception(__( 'We are currently experiencing problems trying to connect to this payment gateway. Sorry for the inconvenience.', 'woocommerce' ));
+					throw new Exception(__( 'We are currently experiencing problems trying to connect to this payment gateway. Sorry for the inconvenience.', 'kej_lipisha_cc'));
 				}
 
 				if (empty($response['body'])) {
-					throw new Exception(__( 'Lipisha\'s Response was empty.', 'woocommerce' ));
+					throw new Exception(__( 'Lipisha\'s Response was empty.', 'kej_lipisha_cc'));
 				}
 
 				$response_body = wp_remote_retrieve_body($response);
@@ -417,10 +401,10 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 				if (is_object($lipisha_response) && is_object($lipisha_response->status) && is_object($lipisha_response->content)) {
 					if ($lipisha_response->status->status_code == "0000") {
 						// Payment has been successful
-						$order->add_order_note( __( 'Lipisha credit card authorised.', 'WooCommerce' ) );
+						$order->add_order_note(__( 'Lipisha Credit Card authorised.', 'WooCommerce'));
 															 
 						// Mark as processing (payment won't be taken until delivery)
-			    	$order->update_status('pending', __('Waiting to verify Lipisha credit card payment.', 'woocommerce'));
+			    	$order->update_status('pending', __('Waiting to verify Lipisha Credit Card payment.', 'kej_lipisha_cc'));
 
 						// Reduce stock levels
 			    	$order->reduce_order_stock();
@@ -433,11 +417,11 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 			    	$card_transaction_table_name = $wpdb->prefix . "woocommerce_lipisha_authorize_card_transaction";
 
 			    	$wpdb->insert($card_transaction_table_name, array(
-			    	   "order_id" => $order->id,
-			    	   "transaction_index" => $lipisha_response->content->transaction_index,
-			    	   "transaction_reference" => $lipisha_response->content->transaction_reference,
-			    	   "status" => $lipisha_response->status->status_description,
-			    	   "status_code" => $lipisha_response->status->status_code
+			    	  "order_id" => $order->id,
+			    	  "transaction_index" => $lipisha_response->content->transaction_index,
+			    	  "transaction_reference" => $lipisha_response->content->transaction_reference,
+			    	  "status" => $lipisha_response->status->status_description,
+			    	  "status_code" => $lipisha_response->status->status_code
 			    	));		
 
 						// Redirect to thank you page
@@ -461,16 +445,17 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 			    	   "processed" => 1
 			    	));
 						// Add notice to the cart
-						wc_add_notice($lipisha_response->content->reason, 'error' );
+						$rejection_reason = (isset($lipisha_response->content->reason)) ? $lipisha_response->content->reason : __('There was an error with the information supplied', 'kej_lipisha_cc');
+						wc_add_notice($rejection_reason, 'error' );
 						// Add note to the order for your reference
-						$customer_order->add_order_note('Lipisha Error: '. $lipisha_response->content->reason);
+						$customer_order->add_order_note(__('Lipisha Error: ', 'kej_lipisha_cc') . $rejection_reason);
 					}
 				} else {
 					// there was an error
 					// Add notice to the cart
-					wc_add_notice(__("There was an unidentified error with Lipisha"), 'error' );
+					wc_add_notice(__("There was an unidentified error with Lipisha", 'kej_lipisha_cc'), 'error' );
 					// Add note to the order for your reference
-					$customer_order->add_order_note('Error: '. __("There was an unidentified error with Lipisha") );
+					$customer_order->add_order_note(__('Error: ', 'kej_lipisha_cc') . __("There was an unidentified error with Lipisha", 'kej_lipisha_cc') );
 				}			
 
 			}
@@ -492,11 +477,11 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 
 		}
 
-		function add_lipisha_gateway($methods) {
-			$methods[] = 'WC_Lipisha_Gateway'; 
+		function add_lipisha_cc_gateway($methods) {
+			$methods[] = 'WC_Lipisha_CreditCard_Gateway'; 
 			return $methods;
 		}
 
-		add_filter('woocommerce_payment_gateways', 'add_lipisha_gateway');
+		add_filter('woocommerce_payment_gateways', 'add_lipisha_cc_gateway');
 	}
 }
