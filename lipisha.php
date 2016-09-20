@@ -353,6 +353,51 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 				echo $output;
 			}
 
+			public function validate_fields() { 
+
+				if ($_POST['cc-name']) {
+					$success = true;
+				} else {					
+					$error_message = __("The Name on Card field is required", 'woothemes');
+					wc_add_notice(__('Field error: ', 'woothemes') . $error_message, 'error');
+					$success = False;
+				}
+
+				if ($_POST['cc-number']) {
+					$success = true;
+				} else {					
+					$error_message = __("The Card Number field is required", 'woothemes');
+					wc_add_notice(__('Field error: ', 'woothemes') . $error_message, 'error');
+					$success = False;
+				}
+
+				if ($_POST['cc-exp-month']) {
+					$success = true;
+				} else {					
+					$error_message = __("The Expiry Month field is required", 'woothemes');
+					wc_add_notice(__('Field error: ', 'woothemes') . $error_message, 'error');
+					$success = False;
+				}
+
+				if ($_POST['cc-exp-year']) {
+					$success = true;
+				} else {					
+					$error_message = __("The Expiry Year field is required", 'woothemes');
+					wc_add_notice(__('Field error: ', 'woothemes') . $error_message, 'error');
+					$success = False;
+				}
+
+				if ($_POST['cc-cvc']) {
+					$success = true;
+				} else {					
+					$error_message = __("The Security Code field is required", 'woothemes');
+					wc_add_notice(__('Field error: ', 'woothemes') . $error_message, 'error');
+					$success = False;
+				}
+
+				return $success;
+			}
+
 		}
 
 		function add_lipisha_gateway($methods) {
