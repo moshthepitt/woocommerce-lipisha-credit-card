@@ -514,6 +514,10 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 				$card_cvc = (isset($_POST['kej_lipisha_cc-card-cvc'])) ? $_POST['kej_lipisha_cc-card-cvc'] : '';
 				$lipisha_expiry = str_replace(array( '/', ' '), '', $_POST['kej_lipisha_cc-card-expiry'] );
 
+				if (strlen($lipisha_expiry) == 4) {
+				  $lipisha_expiry = substr($lipisha_expiry, 0, 2) . "20" . substr($lipisha_expiry, 2);
+				}
+
 				if (!$this->testmode) {
 					$auth_card_url = WOOCOMMERCE_LIPISHA_CC_AUTH_CARD_URL;
 				} else {
