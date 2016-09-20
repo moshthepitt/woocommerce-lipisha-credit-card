@@ -96,7 +96,7 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 
 	//Scripts and Styles
 	add_action('wp_enqueue_scripts', 'set_up_styles');
-	add_action('wp_enqueue_scripts', 'set_up_js');
+	// add_action('wp_enqueue_scripts', 'set_up_js');
 
 	// Payment Gateway
 	add_action('plugins_loaded', 'init_lipisha_gateway');
