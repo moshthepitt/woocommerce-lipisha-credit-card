@@ -538,11 +538,11 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 			    'api_type' => "Callback",
 			    'account_number' => $this->lipisha_account_number,
 			    'card_number' => $card_number,
-			    'address1' => (is_null($order->billing_address_1) || $order->billing_address_1 == "") ? "" : $order->billing_address_1,
-			    'address2' => (is_null($order->billing_address_2) || $order->billing_address_2 == "") ? "" : $order->billing_address_2,
+			    'address1' => (is_null($order->billing_address_1) || $order->billing_address_1 == "") ? $state_name : $order->billing_address_1,
+			    'address2' => (is_null($order->billing_address_2) || $order->billing_address_2 == "") ? $order->billing_phone : $order->billing_address_2,
 			    'expiry' => $lipisha_expiry,
 			    'name' => $order->billing_first_name . " " . $order->billing_last_name,
-			    'country' => WC()->countries->countries[ $order->shipping_country ],
+			    'country' => WC()->countries->countries[$order->billing_country],
 			    'state' => $state_name,
 			    'zip' => (is_null($order->billing_postcode) || $order->billing_postcode == "") ? "00200" : $order->billing_postcode,
 			    'security_code' => $card_cvc,
@@ -608,10 +608,19 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 				    	   "processed" => 1
 				    	));
 							// Add notice to the cart
-							$rejection_reason = (isset($lipisha_response->content->reason)) ? $lipisha_response->content->reason : __('There was an error with the information supplied', 'kej_lipisha_cc');
+							$rejection_reason = __('There was an error with the information supplied', 'kej_lipisha_cc');	
+							if (isset($lipisha_response->content->reason) and !is_null($lipisha_response->content->reason)) {
+								$admin_rejection_reason = $lipisha_response->content->reason;
+								$rejection_reason = $lipisha_response->content->reason;
+							} elseif ($lipisha_response->status->status_code != "" && $lipisha_response->status->status_description != "") {
+								$admin_rejection_reason = "#" . $lipisha_response->status->status_code  . ": " . $lipisha_response->status->status_description;
+							} else {
+								$admin_rejection_reason = __('There was an error with the information supplied', 'kej_lipisha_cc');	
+							}	
+
 							wc_add_notice($rejection_reason, 'error' );
 							// Add note to the order for your reference
-							$order->add_order_note(__('Lipisha Error: ', 'kej_lipisha_cc') . $rejection_reason);
+							$order->add_order_note(__('Lipisha Error: ', 'kej_lipisha_cc') . $admin_rejection_reason);
 						}
 					} else {
 						wc_add_notice(__("There was an error with with this payment provider", 'kej_lipisha_cc') , 'error' );
