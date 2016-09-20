@@ -37,10 +37,10 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 	define('WOOCOMMERCE_LIPISHA_CC_PLUGIN_URL', plugin_dir_url(__FILE__));
 	define('WOOCOMMERCE_LIPISHA_CC_PLUGIN_DIR', WP_PLUGIN_DIR.'/'.dirname(plugin_basename(__FILE__)));	
 
-	define('WOOCOMMERCE_LIPISHA_CC_AUTH_CARD_URL', "http://developer.lipisha.com/index.php/v2/api/authorize_card_transaction");
+	define('WOOCOMMERCE_LIPISHA_CC_AUTH_CARD_URL', "https://lipisha.com/payments/accounts/index.php/v2/api/authorize_card_transaction");
 	define('WOOCOMMERCE_LIPISHA_CC_TEST_AUTH_CARD_URL', "http://developer.lipisha.com/index.php/v2/api/authorize_card_transaction");
 
-	define('WOOCOMMERCE_LIPISHA_CC_COMPLETE_CARD_URL', "http://developer.lipisha.com/index.php/v2/api/complete_card_transaction");
+	define('WOOCOMMERCE_LIPISHA_CC_COMPLETE_CARD_URL', "https://lipisha.com/payments/accounts/index.php/v2/api/complete_card_transaction");
 	define('WOOCOMMERCE_LIPISHA_CC_TEST_COMPLETE_CARD_URL', "http://developer.lipisha.com/index.php/v2/api/complete_card_transaction");
 
 	function woocommerce_lipisha_cc_install() {
