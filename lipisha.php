@@ -525,9 +525,24 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 				}				
 
 				if ((is_null($order->billing_state) || $order->billing_state == "")) {
-					$state_name = "";
+					$state_name = WC()->countries->countries[$order->billing_country];
+				} elseif (!is_null($order->billing_city) && $order->billing_city != "") {
+					$state_name = $order->billing_city;
 				} else {
+					// USE COUNTRY
 					$state_name = WC()->countries->states[$order->billing_country][$order->billing_state];
+				}
+
+				if (is_null($order->billing_address_1) || $order->billing_address_1 == "") {
+					if ($state_name != "") {
+						$address1 = $state_name;	
+					} elseif (!is_null($order->billing_phone) && $order->billing_phone != "") {
+						$address1 = $order->billing_phone;
+					} else {
+						$address1 = "";	
+					}					
+				} else {
+					$address1 = $order->billing_address_1;
 				}
 				
 
@@ -538,7 +553,7 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 			    'api_type' => "Callback",
 			    'account_number' => $this->lipisha_account_number,
 			    'card_number' => $card_number,
-			    'address1' => (is_null($order->billing_address_1) || $order->billing_address_1 == "") ? $state_name : $order->billing_address_1,
+			    'address1' => $address1,
 			    'address2' => (is_null($order->billing_address_2) || $order->billing_address_2 == "") ? $order->billing_phone : $order->billing_address_2,
 			    'expiry' => $lipisha_expiry,
 			    'name' => $order->billing_first_name . " " . $order->billing_last_name,
